@@ -1,7 +1,7 @@
 # Passable Span Panel Card
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/default)
-[![version](https://img.shields.io/badge/version-v1.0.0-blue.svg)](https://github.com/GBear09/passable-span-panel-card/releases)
+[![version](https://img.shields.io/badge/version-v1.0.1-blue.svg)](https://github.com/GBear09/passable-span-panel-card/releases)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A sleek, customizable, and universal custom dashboard card for Home Assistant to visually monitor and control your **Span Smart Electrical Panel**. Designed with realistic physical breaker panel layouts, interactive circuit toggles, priority selection, real-time power/voltage/current telemetry, **Native Home Assistant `ha-entity-picker` Visual UI Editor support**, and **automatic breaker discovery**.
@@ -16,8 +16,8 @@ A sleek, customizable, and universal custom dashboard card for Home Assistant to
 - 🔍 **Smart Auto-Discovery**: Automatically discovers all panel circuit breakers, power sensors, breaker ratings, current sensors, and priority selectors using your panel's base keyword (e.g., `span_panel`).
 - ⚡ **Real-Time Telemetry & Status Badges**: Displays total active power (W), panel voltage (V), and total current (A) in real-time header chips.
 - 🚗 **EV Charger Hardware Linking**: Special handling to seamlessly detect and link standalone EV Charger current telemetry and breaker ratings to panel circuits.
-- 🎛️ **Circuit Priority Control**: Quick drop-down control for Span off-grid priority levels (*Stays On*, *Until Battery*, *Turns Off*) directly on each breaker block.
-- 📱 **Fully Responsive Layout**: Automatically collapses to a clean single-column mobile-friendly list view on smaller viewports.
+- 🎛️ **Circuit Priority Control**: Quick hybrid popover & bottom sheet control for Span off-grid priority levels (*Stays On*, *Until Battery*, *Turns Off*) directly on each breaker block.
+- 📱 **Fully Responsive Layout**: Automatically collapses to a clean single-column mobile-friendly list view with a touch bottom sheet on smaller viewports.
 
 ---
 
@@ -62,7 +62,7 @@ power_summary_entity: sensor.span_panel_power
 2. Copy `passable-span-panel-card.js` to your Home Assistant `www/` directory (`/config/www/passable-span-panel-card.js`).
 3. In Home Assistant, navigate to **Settings** -> **Dashboards** -> **Three Dots (Top Right)** -> **Resources**.
 4. Add resource:
-   - **URL**: `/local/passable-span-panel-card.js?v=1.0.0`
+   - **URL**: `/local/passable-span-panel-card.js?v=1.0.1`
    - **Resource Type**: `JavaScript Module`
 
 ---

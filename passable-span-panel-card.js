@@ -1,6 +1,6 @@
 /**
  * Passable Span Panel Card
- * Version: 1.0.0
+ * Version: 1.0.1
  * GitHub: https://github.com/GBear09/passable-span-panel-card
  * 
  * Sleek, universal Home Assistant custom dashboard card for visual breaker
@@ -8,7 +8,7 @@
  * of Span smart electrical panels.
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.0.1";
 
 const LitElement = Object.getPrototypeOf(
   customElements.get("hui-entities-card")
@@ -155,7 +155,6 @@ class PassableSpanPanelCard extends LitElement {
     nums.sort((a, b) => a - b);
     const start = nums[0];
     const span = nums.length;
-    // Standard panels: odd numbers on left (col 1), even numbers on right (col 2)
     const col = start % 2 !== 0 ? 1 : 2;
     const row = Math.ceil(start / 2);
 
@@ -282,7 +281,6 @@ class PassableSpanPanelCard extends LitElement {
     const priorityEntity = this._getEntity(breaker.priority_entity);
     const ratingEntity = this._getEntity(breaker.rating_entity);
 
-    // Power
     let powerVal =
       powerEntity.state !== "unavailable" ? parseFloat(powerEntity.state) : 0;
     const powerStr = isNaN(powerVal) ? "--" : powerVal.toFixed(0);
@@ -294,7 +292,6 @@ class PassableSpanPanelCard extends LitElement {
     const isOn = isLocked || switchEntity.state === "on" || (!isNaN(powerVal) && powerVal >= 1);
     const isPending = hasSwitch ? this._pendingBreakers.has(breaker.switch_entity) : false;
 
-    // Rating
     const ratedAmps =
       ratingEntity.state !== "unavailable" && ratingEntity.state
         ? parseFloat(ratingEntity.state).toFixed(0)
@@ -316,7 +313,6 @@ class PassableSpanPanelCard extends LitElement {
         currentA = (powerVal / vNum).toFixed(1);
     }
 
-    // Priority Button UI (Hybrid Popover/Sheet trigger)
     const priorityState = priorityEntity.state !== "unavailable" ? priorityEntity.state : "N/A";
     const priorityLabels = {
       never: "Stays On",
@@ -344,7 +340,6 @@ class PassableSpanPanelCard extends LitElement {
           `
         : html`<div class="priority-btn disabled">N/A</div>`;
 
-    // Layout configuration
     const isPanelMode = !this._sortByPower && tabData.start !== null;
     const gridCol = isPanelMode ? (tabData.col === 2 ? 3 : 2) : "auto";
     const layoutStyle = isPanelMode
@@ -359,7 +354,7 @@ class PassableSpanPanelCard extends LitElement {
 
     return html`
       <div
-        class="breaker-box ${colClass} ${isPending ? "pending" : ""}"
+        class="breaker-box ${colClass} ${isPending ? "pending" : ""} ${isMenuOpen ? "active-menu" : ""}"
         style="${layoutStyle}"
         @click=${() => this._showMoreInfo(breaker.power_entity)}
       >
@@ -411,21 +406,21 @@ class PassableSpanPanelCard extends LitElement {
         id: "never",
         label: "Stays On",
         description: "Circuit remains powered during grid outages",
-        icon: "mdi:shield-check-outline",
+        icon: "mdi:shield-check",
         colorClass: "never",
       },
       {
         id: "soc_threshold",
         label: "Until Battery",
         description: "Shed circuit when battery drops to target level",
-        icon: "mdi:battery-alert-outline",
+        icon: "mdi:battery-alert",
         colorClass: "soc_threshold",
       },
       {
         id: "off_grid",
         label: "Turns Off",
         description: "Shed circuit immediately when grid fails",
-        icon: "mdi:flash-off-outline",
+        icon: "mdi:flash-off",
         colorClass: "off_grid",
       },
     ];
@@ -634,7 +629,7 @@ class PassableSpanPanelCard extends LitElement {
         border-radius: var(--ha-card-border-radius, 12px);
         background: var(--ha-card-background, #fff);
         box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0, 0, 0, 0.1));
-        overflow: visible;
+        overflow: visible !important;
         color: var(--primary-text-color);
       }
 
@@ -700,6 +695,7 @@ class PassableSpanPanelCard extends LitElement {
 
       .card-content {
         padding: 0 16px 16px;
+        overflow: visible !important;
       }
 
       /* LIST HEADER */
@@ -742,6 +738,11 @@ class PassableSpanPanelCard extends LitElement {
       }
 
       /* PANEL CONTAINER */
+      .panel-container.grid-mode,
+      .panel-container.list-mode {
+        overflow: visible !important;
+      }
+
       .panel-container.grid-mode {
         display: grid;
         grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) 20px;
@@ -793,6 +794,20 @@ class PassableSpanPanelCard extends LitElement {
         cursor: pointer;
         transition: transform 0.1s, box-shadow 0.1s;
       }
+
+      /* Z-INDEX ELEVATION FOR ACTIVE POPOVER MENU */
+      .breaker-box.active-menu {
+        z-index: 1000 !important;
+      }
+      .breaker-box.active-menu .breaker-content {
+        z-index: 1001 !important;
+        overflow: visible !important;
+      }
+      .breaker-box.active-menu .breaker-header {
+        z-index: 1002 !important;
+        overflow: visible !important;
+      }
+
       .breaker-box:not(.empty):hover {
         transform: translateY(-1px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
@@ -856,6 +871,7 @@ class PassableSpanPanelCard extends LitElement {
         gap: 8px;
         min-width: 0;
         position: relative;
+        overflow: visible;
       }
       .breaker-name {
         font-weight: 600;
@@ -994,6 +1010,7 @@ class PassableSpanPanelCard extends LitElement {
       }
       .priority-btn.active {
         box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+        z-index: 1005 !important;
       }
       .dropdown-arrow {
         --mdc-icon-size: 14px;
@@ -1008,13 +1025,13 @@ class PassableSpanPanelCard extends LitElement {
         position: absolute;
         top: calc(100% + 6px);
         right: 0;
-        z-index: 999;
+        z-index: 9999 !important;
         background: var(--card-background-color, #1e1e1e);
         border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
         border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
         padding: 6px;
-        min-width: 150px;
+        min-width: 160px;
         display: flex;
         flex-direction: column;
         gap: 4px;
