@@ -1,6 +1,6 @@
 /**
  * Passable Span Panel Card
- * Version: 1.0.1
+ * Version: 1.0.2
  * GitHub: https://github.com/GBear09/passable-span-panel-card
  * 
  * Sleek, universal Home Assistant custom dashboard card for visual breaker
@@ -8,7 +8,7 @@
  * of Span smart electrical panels.
  */
 
-const CARD_VERSION = "1.0.1";
+const CARD_VERSION = "1.0.2";
 
 const LitElement = Object.getPrototypeOf(
   customElements.get("hui-entities-card")

@@ -1,7 +1,7 @@
 # Passable Span Panel Card
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/default)
-[![version](https://img.shields.io/badge/version-v1.0.1-blue.svg)](https://github.com/GBear09/passable-span-panel-card/releases)
+[![version](https://img.shields.io/badge/version-v1.0.2-blue.svg)](https://github.com/GBear09/passable-span-panel-card/releases)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A sleek, customizable, and universal custom dashboard card for Home Assistant to visually monitor and control your **Span Smart Electrical Panel**. Designed with realistic physical breaker panel layouts, interactive circuit toggles, priority selection, real-time power/voltage/current telemetry, **Native Home Assistant `ha-entity-picker` Visual UI Editor support**, and **automatic breaker discovery**.
