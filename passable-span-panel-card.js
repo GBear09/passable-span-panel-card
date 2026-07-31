@@ -41,6 +41,7 @@ class PassableSpanPanelCard extends LitElement {
       config: {},
       _pendingBreakers: { state: true },
       _sortByPower: { state: true },
+      _activePriorityMenu: { state: true },
     };
   }
 
@@ -48,6 +49,48 @@ class PassableSpanPanelCard extends LitElement {
     super();
     this._pendingBreakers = new Set();
     this._sortByPower = false;
+    this._activePriorityMenu = null;
+    this._handleOutsideClick = this._handleOutsideClick.bind(this);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener("click", this._handleOutsideClick);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener("click", this._handleOutsideClick);
+  }
+
+  _handleOutsideClick() {
+    if (this._activePriorityMenu) {
+      this._closePriorityMenu();
+    }
+  }
+
+  _closePriorityMenu() {
+    this._activePriorityMenu = null;
+  }
+
+  _openPriorityMenu(e, breaker) {
+    e.stopPropagation();
+    this._fireHaptic("light");
+
+    const priorityEntity = this._getEntity(breaker.priority_entity);
+    const currentOption = priorityEntity.state !== "unavailable" ? priorityEntity.state : "never";
+    const isMobile = window.innerWidth <= 768;
+
+    if (this._activePriorityMenu && this._activePriorityMenu.entityId === breaker.priority_entity) {
+      this._activePriorityMenu = null;
+    } else {
+      this._activePriorityMenu = {
+        entityId: breaker.priority_entity,
+        name: breaker.name,
+        currentOption: currentOption,
+        isMobile: isMobile,
+      };
+    }
   }
 
   setConfig(config) {
@@ -145,13 +188,9 @@ class PassableSpanPanelCard extends LitElement {
       const consumedEnergyEntityId = `sensor.${keyword}_${baseName}${consumedEnergySuffix}`;
       if (!allEntities.includes(consumedEnergyEntityId)) return;
 
-      // Try to find exact match rating entity
       let ratingEntityStr = `sensor.${keyword}_${baseName}_breaker_rating`;
       let ratingEntity = allEntities.includes(ratingEntityStr) ? ratingEntityStr : null;
 
-      // EV Charger Separation Support: 
-      // If a power/energy sensor group has no breaker rating of its own, check if the 
-      // isolated drive_car_charger_breaker_rating exists to link the car hardware with the panel hardware.
       if (!ratingEntity) {
         const evRatingStr = allEntities.find(e => e.startsWith(`sensor.${keyword}_`) && e.endsWith("drive_car_charger_breaker_rating"));
         if (evRatingStr) {
@@ -162,7 +201,7 @@ class PassableSpanPanelCard extends LitElement {
       if (!breakers[baseName]) {
         let formattedName = this._formatName(baseName);
         if (ratingEntity && ratingEntity.includes("drive_car_charger") && !formattedName.toLowerCase().includes("charger")) {
-            formattedName += " (Car Charger)"; // Better auto-naming for vehicles
+            formattedName += " (Car Charger)";
         }
 
         breakers[baseName] = {
@@ -174,11 +213,9 @@ class PassableSpanPanelCard extends LitElement {
     });
 
     Object.keys(breakers).forEach((nameKey) => {
-      // Find switch (often missing on EV chargers)
       let switchEntityId = allEntities.find((e) =>
         e.startsWith(`switch.${keyword}_${nameKey}${breakerSuffix}`)
       );
-      // Find priority
       let priorityEntityId = allEntities.find((e) =>
         e.startsWith(`select.${keyword}_${nameKey}${prioritySuffix}`)
       );
@@ -254,7 +291,6 @@ class PassableSpanPanelCard extends LitElement {
     const hasValidSwitch = hasSwitch && switchEntity.state !== "unavailable" && switchEntity.state !== "unknown";
     const isLocked = !hasValidSwitch;
     
-    // Force ON if it's locked by Span, the switch reports 'on', OR it's actively drawing >=1W of power
     const isOn = isLocked || switchEntity.state === "on" || (!isNaN(powerVal) && powerVal >= 1);
     const isPending = hasSwitch ? this._pendingBreakers.has(breaker.switch_entity) : false;
 
@@ -266,11 +302,9 @@ class PassableSpanPanelCard extends LitElement {
     const voltageAttr = ratingEntity.attributes?.voltage;
     const tabData = this._parseTabs(ratingEntity.attributes?.tabs);
     
-    // Dynamic Voltage and Current
     const vNum = parseFloat(voltageAttr) || (tabData.span > 1 ? 240 : 120);
     const voltageStr = voltageAttr ? `${voltageAttr}` : `${vNum}`;
     
-    // Use the actual current sensor if available (like for EV chargers)
     let currentA = "--";
     if (breaker.rating_entity) {
         const explicitCurrentStr = breaker.rating_entity.replace("_breaker_rating", "_current");
@@ -278,44 +312,40 @@ class PassableSpanPanelCard extends LitElement {
             currentA = parseFloat(this.hass.states[explicitCurrentStr].state).toFixed(1);
         }
     }
-    // Fallback to calculation
     if (currentA === "--" && !isNaN(powerVal)) {
         currentA = (powerVal / vNum).toFixed(1);
     }
 
-    // Priority Dropdown
-    const priorityState =
-      priorityEntity.state !== "unavailable" ? priorityEntity.state : "N/A";
+    // Priority Button UI (Hybrid Popover/Sheet trigger)
+    const priorityState = priorityEntity.state !== "unavailable" ? priorityEntity.state : "N/A";
+    const priorityLabels = {
+      never: "Stays On",
+      soc_threshold: "Until Battery",
+      off_grid: "Turns Off",
+    };
+    const currentLabel = priorityLabels[priorityState] || priorityState;
+    const isMenuOpen = this._activePriorityMenu?.entityId === breaker.priority_entity;
+
     const priorityEl =
       breaker.priority_entity && priorityState !== "N/A"
         ? html`
-            <select
-              class="priority ${priorityState}"
-              @change=${(e) =>
-                this._changePriority(breaker.priority_entity, e.target.value)}
-              @click=${(e) => e.stopPropagation()}
+            <div
+              class="priority-btn ${priorityState} ${isMenuOpen ? "active" : ""}"
+              @click=${(e) => this._openPriorityMenu(e, breaker)}
               title="Change Priority"
             >
-              <option value="never" ?selected=${priorityState === "never"}>
-                Stays On
-              </option>
-              <option
-                value="soc_threshold"
-                ?selected=${priorityState === "soc_threshold"}
-              >
-                Until Battery
-              </option>
-              <option value="off_grid" ?selected=${priorityState === "off_grid"}>
-                Turns Off
-              </option>
-            </select>
+              <span>${currentLabel}</span>
+              <ha-icon icon="mdi:chevron-down" class="dropdown-arrow"></ha-icon>
+
+              ${isMenuOpen && !this._activePriorityMenu.isMobile
+                ? this._renderDesktopPopover(breaker)
+                : html``}
+            </div>
           `
-        : html`<div class="priority disabled">N/A</div>`;
+        : html`<div class="priority-btn disabled">N/A</div>`;
 
     // Layout configuration
     const isPanelMode = !this._sortByPower && tabData.start !== null;
-    
-    // grid-column mapping: 1=LeftNum, 2=LeftBreakers, 3=RightBreakers, 4=RightNum
     const gridCol = isPanelMode ? (tabData.col === 2 ? 3 : 2) : "auto";
     const layoutStyle = isPanelMode
       ? `grid-column: ${gridCol}; grid-row: ${tabData.row} / span ${tabData.span};`
@@ -375,6 +405,105 @@ class PassableSpanPanelCard extends LitElement {
     `;
   }
 
+  _getPriorityOptions() {
+    return [
+      {
+        id: "never",
+        label: "Stays On",
+        description: "Circuit remains powered during grid outages",
+        icon: "mdi:shield-check-outline",
+        colorClass: "never",
+      },
+      {
+        id: "soc_threshold",
+        label: "Until Battery",
+        description: "Shed circuit when battery drops to target level",
+        icon: "mdi:battery-alert-outline",
+        colorClass: "soc_threshold",
+      },
+      {
+        id: "off_grid",
+        label: "Turns Off",
+        description: "Shed circuit immediately when grid fails",
+        icon: "mdi:flash-off-outline",
+        colorClass: "off_grid",
+      },
+    ];
+  }
+
+  _renderDesktopPopover(breaker) {
+    const options = this._getPriorityOptions();
+    const currentOption = this._activePriorityMenu.currentOption;
+
+    return html`
+      <div class="popover-dropdown" @click=${(e) => e.stopPropagation()}>
+        ${options.map((opt) => {
+          const isSelected = currentOption === opt.id;
+          return html`
+            <div
+              class="popover-item ${opt.colorClass} ${isSelected ? "selected" : ""}"
+              @click=${(e) => {
+                e.stopPropagation();
+                this._changePriority(breaker.priority_entity, opt.id);
+                this._closePriorityMenu();
+              }}
+            >
+              <ha-icon icon=${opt.icon} class="popover-icon ${opt.colorClass}"></ha-icon>
+              <span class="popover-label">${opt.label}</span>
+              ${isSelected
+                ? html`<ha-icon icon="mdi:check" class="check-icon"></ha-icon>`
+                : html``}
+            </div>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  _renderMobileBottomSheet() {
+    if (!this._activePriorityMenu || !this._activePriorityMenu.isMobile) return html``;
+
+    const { entityId, name, currentOption } = this._activePriorityMenu;
+    const options = this._getPriorityOptions();
+
+    return html`
+      <div class="bottom-sheet-backdrop" @click=${this._closePriorityMenu}>
+        <div class="bottom-sheet-modal" @click=${(e) => e.stopPropagation()}>
+          <div class="sheet-handle"></div>
+          <div class="sheet-header">
+            <div class="sheet-title">Off-Grid Circuit Priority</div>
+            <div class="sheet-subtitle">${name}</div>
+          </div>
+          <div class="sheet-options">
+            ${options.map((opt) => {
+              const isSelected = currentOption === opt.id;
+              return html`
+                <div
+                  class="sheet-option-row ${opt.colorClass} ${isSelected ? "selected" : ""}"
+                  @click=${() => {
+                    this._changePriority(entityId, opt.id);
+                    this._closePriorityMenu();
+                  }}
+                >
+                  <div class="sheet-icon-wrapper ${opt.colorClass}">
+                    <ha-icon icon=${opt.icon}></ha-icon>
+                  </div>
+                  <div class="sheet-option-text">
+                    <div class="sheet-option-label">${opt.label}</div>
+                    <div class="sheet-option-desc">${opt.description}</div>
+                  </div>
+                  ${isSelected
+                    ? html`<ha-icon icon="mdi:check-circle" class="sheet-check-icon"></ha-icon>`
+                    : html``}
+                </div>
+              `;
+            })}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   render() {
     if (!this.hass || !this.config) return html``;
 
@@ -397,7 +526,6 @@ class PassableSpanPanelCard extends LitElement {
         return tabA - tabB;
       });
       
-      // Calculate occupied tabs for rendering empty spaces
       allBreakers.forEach(b => {
           const ratingEntity = this._getEntity(b.rating_entity);
           const tabData = this._parseTabs(ratingEntity?.attributes?.tabs);
@@ -420,16 +548,13 @@ class PassableSpanPanelCard extends LitElement {
     if (!this._sortByPower) {
         panelElements.push(html`<div class="busbar"></div>`);
         
-        // Render Tab Numbers
         for (let r = 1; r <= (maxTabs / 2); r++) {
             panelElements.push(html`<div class="tab-number left" style="grid-column: 1; grid-row: ${r};">${r*2 - 1}</div>`);
             panelElements.push(html`<div class="tab-number right" style="grid-column: 4; grid-row: ${r};">${r*2}</div>`);
         }
         
-        // Render Empty Slots
         for (let i = 1; i <= maxTabs; i++) {
             if (!occupiedTabs.has(i)) {
-                // Determine placement based on the 4 column grid
                 const col = i % 2 !== 0 ? 2 : 3;
                 const row = Math.ceil(i / 2);
                 panelElements.push(html`
@@ -441,7 +566,6 @@ class PassableSpanPanelCard extends LitElement {
         }
     }
 
-    // Insert actual breakers
     panelElements.push(...allBreakers.map((breaker) => this._renderBreaker(breaker)));
 
     return html`
@@ -493,6 +617,8 @@ class PassableSpanPanelCard extends LitElement {
             ${panelElements}
           </div>
         </div>
+
+        ${this._renderMobileBottomSheet()}
       </ha-card>
     `;
   }
@@ -508,7 +634,7 @@ class PassableSpanPanelCard extends LitElement {
         border-radius: var(--ha-card-border-radius, 12px);
         background: var(--ha-card-background, #fff);
         box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0, 0, 0, 0.1));
-        overflow: hidden;
+        overflow: visible;
         color: var(--primary-text-color);
       }
 
@@ -618,7 +744,6 @@ class PassableSpanPanelCard extends LitElement {
       /* PANEL CONTAINER */
       .panel-container.grid-mode {
         display: grid;
-        /* 4 Columns: Left Numbers | Left Breakers | Right Breakers | Right Numbers */
         grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) 20px;
         grid-auto-rows: minmax(70px, auto);
         gap: 6px 8px;
@@ -701,10 +826,10 @@ class PassableSpanPanelCard extends LitElement {
 
       /* Handle Orientation Physics */
       .breaker-box.col-1 {
-        flex-direction: row-reverse; /* Handle on right (towards busbar) */
+        flex-direction: row-reverse;
       }
       .breaker-box.col-2 {
-        flex-direction: row; /* Handle on left (towards busbar) */
+        flex-direction: row;
       }
       .breaker-box.col-list {
         flex-direction: row;
@@ -718,6 +843,7 @@ class PassableSpanPanelCard extends LitElement {
         padding: 10px 12px;
         min-width: 0;
         background: inherit;
+        overflow: visible;
       }
       .col-1 .breaker-content { border-radius: 8px 0 0 8px; }
       .col-2 .breaker-content { border-radius: 0 8px 8px 0; }
@@ -729,6 +855,7 @@ class PassableSpanPanelCard extends LitElement {
         margin-bottom: 6px;
         gap: 8px;
         min-width: 0;
+        position: relative;
       }
       .breaker-name {
         font-weight: 600;
@@ -767,7 +894,7 @@ class PassableSpanPanelCard extends LitElement {
       }
       
       .breaker-track.off {
-        background: #3a1111; /* Dark red track visibility when off */
+        background: #3a1111;
         box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), inset 0 0 0 1px #5a1a1a;
       }
 
@@ -790,19 +917,18 @@ class PassableSpanPanelCard extends LitElement {
         opacity: 0.8;
       }
 
-      /* Slide towards the center busbar when ON */
-      .col-1 .breaker-handle { transform: translateX(2px); } /* OFF: away from busbar (left) */
-      .col-1 .breaker-handle.on { transform: translateX(22px); } /* ON: towards busbar (right) */
+      .col-1 .breaker-handle { transform: translateX(2px); }
+      .col-1 .breaker-handle.on { transform: translateX(22px); }
 
-      .col-2 .breaker-handle { transform: translateX(22px); } /* OFF: away from busbar (right) */
-      .col-2 .breaker-handle.on { transform: translateX(2px); } /* ON: towards busbar (left) */
+      .col-2 .breaker-handle { transform: translateX(22px); }
+      .col-2 .breaker-handle.on { transform: translateX(2px); }
 
       .col-list .breaker-handle { transform: translateX(2px); }
       .col-list .breaker-handle.on { transform: translateX(22px); }
       .col-list .breaker-handle.on.locked { color: #81c784; }
 
       .breaker-handle.off {
-        color: #ff8a80; /* Light red text */
+        color: #ff8a80;
         border-bottom: 2px solid #d32f2f;
       }
 
@@ -823,30 +949,242 @@ class PassableSpanPanelCard extends LitElement {
         opacity: 0.8;
       }
 
-      /* PRIORITY DROPDOWN */
-      .priority {
-        font-size: 0.7em;
-        font-weight: 600;
-        padding: 4px 24px 4px 8px;
-        border-radius: 10px;
+      /* PRIORITY BUTTON (MODERN HYBRID TRIGGER) */
+      .priority-btn {
+        font-size: 0.72em;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 20px;
         text-transform: uppercase;
+        letter-spacing: 0.04em;
         border: 1px solid transparent;
         cursor: pointer;
-        appearance: none;
-        -webkit-appearance: none;
-        font-family: inherit;
-        background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23777%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E");
-        background-repeat: no-repeat;
-        background-position: right 4px center;
-        background-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        position: relative;
+        flex-shrink: 0;
+        transition: all 0.2s ease;
+        user-select: none;
+      }
+      .priority-btn:hover {
+        filter: brightness(1.1);
+        transform: scale(1.02);
+      }
+      .priority-btn.never {
+        background-color: rgba(76, 175, 80, 0.18);
+        color: #4caf50;
+        border-color: rgba(76, 175, 80, 0.4);
+      }
+      .priority-btn.soc_threshold {
+        background-color: rgba(255, 152, 0, 0.18);
+        color: #ff9800;
+        border-color: rgba(255, 152, 0, 0.4);
+      }
+      .priority-btn.off_grid {
+        background-color: rgba(244, 67, 54, 0.18);
+        color: #f44336;
+        border-color: rgba(244, 67, 54, 0.4);
+      }
+      .priority-btn.disabled {
+        background-color: rgba(128, 128, 128, 0.15);
+        color: var(--secondary-text-color);
+        cursor: not-allowed;
+        border-color: transparent;
+      }
+      .priority-btn.active {
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+      }
+      .dropdown-arrow {
+        --mdc-icon-size: 14px;
+        transition: transform 0.2s ease;
+      }
+      .priority-btn.active .dropdown-arrow {
+        transform: rotate(180deg);
+      }
+
+      /* DESKTOP POPOVER DROPDOWN */
+      .popover-dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 999;
+        background: var(--card-background-color, #1e1e1e);
+        border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+        padding: 6px;
+        min-width: 150px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        animation: popoverFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes popoverFadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-6px) scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      .popover-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 0.85em;
+        font-weight: 600;
+        color: var(--primary-text-color, #fff);
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+      }
+      .popover-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .popover-item.selected {
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .popover-icon {
+        --mdc-icon-size: 16px;
+      }
+      .popover-icon.never { color: #4caf50; }
+      .popover-icon.soc_threshold { color: #ff9800; }
+      .popover-icon.off_grid { color: #f44336; }
+      .popover-label {
+        flex-grow: 1;
+        white-space: nowrap;
+      }
+      .check-icon {
+        --mdc-icon-size: 14px;
+        color: var(--primary-color, #2196f3);
+      }
+
+      /* MOBILE BOTTOM SHEET MODAL */
+      .bottom-sheet-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 10000;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        animation: backdropFade 0.2s ease;
+      }
+      @keyframes backdropFade {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .bottom-sheet-modal {
+        width: 100%;
+        max-width: 500px;
+        background: var(--card-background-color, #1e1e1e);
+        border-radius: 20px 20px 0 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.15);
+        padding: 12px 18px 24px;
+        box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
+        animation: sheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        box-sizing: border-box;
+      }
+      @keyframes sheetSlideUp {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+      }
+      .sheet-handle {
+        width: 36px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+        margin: 0 auto 14px;
+      }
+      .sheet-header {
+        margin-bottom: 16px;
+        text-align: center;
+      }
+      .sheet-title {
+        font-size: 1.1em;
+        font-weight: 700;
+        color: var(--primary-text-color, #fff);
+      }
+      .sheet-subtitle {
+        font-size: 0.85em;
+        color: var(--secondary-text-color, #aaa);
+        margin-top: 2px;
+      }
+      .sheet-options {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sheet-option-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .sheet-option-row:active {
+        transform: scale(0.98);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .sheet-option-row.selected {
+        border-color: rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .sheet-icon-wrapper {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         flex-shrink: 0;
       }
-      .priority:hover { filter: brightness(0.95); }
-      .priority.never { background-color: rgba(76, 175, 80, 0.15); color: #4caf50; }
-      .priority.soc_threshold { background-color: rgba(255, 152, 0, 0.15); color: #ff9800; }
-      .priority.off_grid { background-color: rgba(244, 67, 54, 0.15); color: #f44336; }
-      div.priority { background-image: none; padding-right: 8px; }
-      div.priority.disabled { background-color: rgba(128, 128, 128, 0.15); color: var(--secondary-text-color); cursor: not-allowed; }
+      .sheet-icon-wrapper.never {
+        background: rgba(76, 175, 80, 0.18);
+        color: #4caf50;
+      }
+      .sheet-icon-wrapper.soc_threshold {
+        background: rgba(255, 152, 0, 0.18);
+        color: #ff9800;
+      }
+      .sheet-icon-wrapper.off_grid {
+        background: rgba(244, 67, 54, 0.18);
+        color: #f44336;
+      }
+      .sheet-icon-wrapper ha-icon {
+        --mdc-icon-size: 20px;
+      }
+      .sheet-option-text {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+      }
+      .sheet-option-label {
+        font-weight: 700;
+        font-size: 0.95em;
+        color: var(--primary-text-color, #fff);
+      }
+      .sheet-option-desc {
+        font-size: 0.78em;
+        color: var(--secondary-text-color, #aaa);
+        margin-top: 2px;
+      }
+      .sheet-check-icon {
+        --mdc-icon-size: 20px;
+        color: var(--primary-color, #2196f3);
+      }
 
       /* RESPONSIVE DESIGN FOR SMALLER SCREENS */
       @media (max-width: 850px) {
@@ -860,7 +1198,6 @@ class PassableSpanPanelCard extends LitElement {
           justify-content: flex-start;
         }
         
-        /* Force Single Column List View */
         .panel-container.grid-mode {
           display: flex;
           flex-direction: column;
@@ -868,12 +1205,10 @@ class PassableSpanPanelCard extends LitElement {
           padding: 12px;
         }
         
-        /* Hide physical panel decorations on small screens */
         .busbar, .tab-number, .breaker-box.empty {
           display: none !important;
         }
 
-        /* Normalize all breakers to left-to-right list style */
         .breaker-box {
           flex-direction: row !important;
           width: 100%;
@@ -923,11 +1258,9 @@ class PassableSpanPanelCard extends LitElement {
           color: #81c784 !important; 
         }
 
-        .priority {
-          padding: 2px 20px 2px 6px;
+        .priority-btn {
+          padding: 3px 8px;
           font-size: 0.65em;
-          background-size: 12px;
-          background-position: right 2px center;
         }
       }
     `;
@@ -1126,7 +1459,6 @@ class PassableSpanPanelCardEditor extends LitElement {
 customElements.define("passable-span-panel-card", PassableSpanPanelCard);
 customElements.define("passable-span-panel-card-editor", PassableSpanPanelCardEditor);
 
-// Backward compatibility registration
 if (!customElements.get("span-panel-card")) {
   customElements.define("span-panel-card", PassableSpanPanelCard);
 }
@@ -1134,7 +1466,6 @@ if (!customElements.get("span-panel-card-editor")) {
   customElements.define("span-panel-card-editor", PassableSpanPanelCardEditor);
 }
 
-// Register the custom card for the Home Assistant card picker
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "passable-span-panel-card",
