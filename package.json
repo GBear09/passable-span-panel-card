@@ -1,0 +1,25 @@
+{
+  "name": "passable-span-panel-card",
+  "version": "1.0.0",
+  "description": "Passable Span Panel Card - A sleek, universal Home Assistant custom dashboard card for visual breaker panel monitoring and priority control of Span smart panels.",
+  "main": "passable-span-panel-card.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GBear09/passable-span-panel-card.git"
+  },
+  "keywords": [
+    "home-assistant",
+    "hacs",
+    "custom-card",
+    "span-panel",
+    "breaker-panel",
+    "energy-monitoring",
+    "visual-editor"
+  ],
+  "author": "GBear09",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/GBear09/passable-span-panel-card/issues"
+  },
+  "homepage": "https://github.com/GBear09/passable-span-panel-card#readme"
+}
