@@ -52,7 +52,13 @@ class PassableSpanPanelCard extends LitElement {
     this._pendingBreakers = new Set();
     this._sortByPower = false;
     this._activePriorityMenu = null;
+    this._touchStartY = 0;
+    this._touchCurrentY = 0;
+    this._isDraggingSheet = false;
     this._handleOutsideClick = this._handleOutsideClick.bind(this);
+    this._onSheetTouchStart = this._onSheetTouchStart.bind(this);
+    this._onSheetTouchMove = this._onSheetTouchMove.bind(this);
+    this._onSheetTouchEnd = this._onSheetTouchEnd.bind(this);
   }
 
   connectedCallback() {
@@ -73,6 +79,51 @@ class PassableSpanPanelCard extends LitElement {
 
   _closePriorityMenu() {
     this._activePriorityMenu = null;
+    this._isDraggingSheet = false;
+  }
+
+  _onSheetTouchStart(e) {
+    if (!e.touches || e.touches.length === 0) return;
+    this._touchStartY = e.touches[0].clientY;
+    this._touchCurrentY = e.touches[0].clientY;
+    this._isDraggingSheet = true;
+    const modal = this.shadowRoot?.querySelector(".bottom-sheet-modal");
+    if (modal) {
+      modal.style.transition = "none";
+    }
+  }
+
+  _onSheetTouchMove(e) {
+    if (!this._isDraggingSheet || !e.touches || e.touches.length === 0) return;
+    this._touchCurrentY = e.touches[0].clientY;
+    const deltaY = this._touchCurrentY - this._touchStartY;
+    
+    if (deltaY > 0) {
+      if (e.cancelable) e.preventDefault();
+      const modal = this.shadowRoot?.querySelector(".bottom-sheet-modal");
+      if (modal) {
+        modal.style.transform = `translateY(${deltaY}px)`;
+      }
+    }
+  }
+
+  _onSheetTouchEnd() {
+    if (!this._isDraggingSheet) return;
+    this._isDraggingSheet = false;
+    const deltaY = this._touchCurrentY - this._touchStartY;
+    const modal = this.shadowRoot?.querySelector(".bottom-sheet-modal");
+    
+    if (modal) {
+      modal.style.transition = "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)";
+      if (deltaY > 80) {
+        modal.style.transform = "translateY(100%)";
+        setTimeout(() => {
+          this._closePriorityMenu();
+        }, 200);
+      } else {
+        modal.style.transform = "translateY(0)";
+      }
+    }
   }
 
   _openPriorityMenu(e, breaker) {
@@ -565,9 +616,19 @@ class PassableSpanPanelCard extends LitElement {
     const options = this._getPriorityOptions();
 
     return html`
-      <div class="bottom-sheet-backdrop" @click=${this._closePriorityMenu}>
-        <div class="bottom-sheet-modal" @click=${(e) => e.stopPropagation()}>
-          <div class="sheet-handle"></div>
+      <div
+        class="bottom-sheet-backdrop"
+        @click=${this._closePriorityMenu}
+        @touchmove=${(e) => { if (e.cancelable) e.preventDefault(); }}
+      >
+        <div
+          class="bottom-sheet-modal"
+          @click=${(e) => e.stopPropagation()}
+          @touchstart=${this._onSheetTouchStart}
+          @touchmove=${this._onSheetTouchMove}
+          @touchend=${this._onSheetTouchEnd}
+        >
+          <div class="sheet-handle" @click=${this._closePriorityMenu}></div>
           <div class="sheet-header">
             <div class="sheet-title">Off-Grid Circuit Priority</div>
             <div class="sheet-subtitle">${name}</div>
@@ -1363,6 +1424,8 @@ class PassableSpanPanelCard extends LitElement {
         align-items: flex-end;
         justify-content: center;
         animation: backdropFade 0.2s ease;
+        touch-action: none;
+        overscroll-behavior: contain;
       }
       @keyframes backdropFade {
         from { opacity: 0; }
@@ -1378,17 +1441,20 @@ class PassableSpanPanelCard extends LitElement {
         box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
         animation: sheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         box-sizing: border-box;
+        touch-action: pan-y;
+        will-change: transform;
       }
       @keyframes sheetSlideUp {
         from { transform: translateY(100%); }
         to { transform: translateY(0); }
       }
       .sheet-handle {
-        width: 36px;
-        height: 4px;
-        background: rgba(255, 255, 255, 0.3);
-        border-radius: 2px;
-        margin: 0 auto 14px;
+        width: 40px;
+        height: 5px;
+        background: rgba(255, 255, 255, 0.35);
+        border-radius: 3px;
+        margin: 4px auto 14px;
+        cursor: pointer;
       }
       .sheet-header {
         margin-bottom: 16px;
