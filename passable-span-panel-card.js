@@ -1,6 +1,6 @@
 /**
  * Passable Span Panel Card
- * Version: 1.0.2
+ * Version: 1.1.0
  * GitHub: https://github.com/GBear09/passable-span-panel-card
  * 
  * Sleek, universal Home Assistant custom dashboard card for visual breaker
@@ -8,7 +8,7 @@
  * of Span smart electrical panels.
  */
 
-const CARD_VERSION = "1.0.2";
+const CARD_VERSION = "1.1.0";
 
 const LitElement = Object.getPrototypeOf(
   customElements.get("hui-entities-card")
@@ -32,6 +32,8 @@ class PassableSpanPanelCard extends LitElement {
       title: "Span Panel",
       entity_keyword: "span_panel",
       power_summary_entity: "sensor.span_panel_power",
+      grid_status_entity: "binary_sensor.power_grid_status",
+      battery_threshold: 50,
     };
   }
 
@@ -275,6 +277,91 @@ class PassableSpanPanelCard extends LitElement {
     if (navigator.vibrate) navigator.vibrate(15);
   }
 
+  _getGridStatus() {
+    const gridEntityId = this.config.grid_status_entity || "binary_sensor.power_grid_status";
+    const entity = this._getEntity(gridEntityId);
+    if (!entity || entity.state === "unavailable" || entity.state === "unknown") {
+      return { isDown: false, entityId: gridEntityId, state: "on" };
+    }
+    const stateLower = (entity.state || "").toLowerCase();
+    const isDown = ["off", "false", "offline", "down", "grid_off", "0"].includes(stateLower);
+    return { isDown, entityId: gridEntityId, state: entity.state };
+  }
+
+  _getBatterySoc() {
+    let socEntityId = this.config.battery_soc_entity;
+    if (!socEntityId && this.config.entity_keyword) {
+      const keyword = this.config.entity_keyword;
+      const candidateIds = [
+        `sensor.${keyword}_battery_percentage`,
+        `sensor.${keyword}_battery_level`,
+        `sensor.${keyword}_battery_soc`,
+        `sensor.span_panel_battery_percentage`,
+        `sensor.battery_level`,
+      ];
+      socEntityId = candidateIds.find((id) => this.hass.states[id] && this.hass.states[id].state !== "unavailable");
+    }
+
+    if (socEntityId && this.hass.states[socEntityId]) {
+      const val = parseFloat(this.hass.states[socEntityId].state);
+      if (!isNaN(val)) return { soc: val, entityId: socEntityId };
+    }
+
+    return { soc: 100, entityId: socEntityId || null };
+  }
+
+  _getCircuitOutageState(priorityState) {
+    const gridInfo = this._getGridStatus();
+    const batteryInfo = this._getBatterySoc();
+    const threshold = parseFloat(
+      this.config.battery_threshold !== undefined ? this.config.battery_threshold : 50
+    );
+
+    if (!gridInfo.isDown) {
+      return {
+        isGridDown: false,
+        isShed: false,
+        isPowered: true,
+        badgeLabel: null,
+        badgeClass: "",
+        badgeIcon: "",
+      };
+    }
+
+    if (priorityState === "never") {
+      const isPowered = batteryInfo.soc > 0;
+      return {
+        isGridDown: true,
+        isShed: !isPowered,
+        isPowered: isPowered,
+        badgeLabel: isPowered ? "Stays On (Powered)" : "Shed (No Battery)",
+        badgeClass: isPowered ? "outage-stays-on-powered" : "outage-shed",
+        badgeIcon: isPowered ? "mdi:shield-check" : "mdi:shield-off",
+      };
+    } else if (priorityState === "soc_threshold") {
+      const isPowered = batteryInfo.soc > threshold;
+      return {
+        isGridDown: true,
+        isShed: !isPowered,
+        isPowered: isPowered,
+        badgeLabel: isPowered
+          ? `Until Battery (${batteryInfo.soc.toFixed(0)}% > ${threshold}%)`
+          : `Shed (Battery ≤ ${threshold}%)`,
+        badgeClass: isPowered ? "outage-until-battery-powered" : "outage-until-battery-shed",
+        badgeIcon: isPowered ? "mdi:battery-charging-60" : "mdi:battery-alert",
+      };
+    } else {
+      return {
+        isGridDown: true,
+        isShed: true,
+        isPowered: false,
+        badgeLabel: "Shed (Turns Off)",
+        badgeClass: "outage-turns-off-shed",
+        badgeIcon: "mdi:flash-off",
+      };
+    }
+  }
+
   _renderBreaker(breaker) {
     const switchEntity = this._getEntity(breaker.switch_entity);
     const powerEntity = this._getEntity(breaker.power_entity);
@@ -289,7 +376,14 @@ class PassableSpanPanelCard extends LitElement {
     const hasValidSwitch = hasSwitch && switchEntity.state !== "unavailable" && switchEntity.state !== "unknown";
     const isLocked = !hasValidSwitch;
     
-    const isOn = isLocked || switchEntity.state === "on" || (!isNaN(powerVal) && powerVal >= 1);
+    const priorityState = priorityEntity.state !== "unavailable" ? priorityEntity.state : "N/A";
+    const outageState = this._getCircuitOutageState(priorityState);
+
+    let isOn = isLocked || switchEntity.state === "on" || (!isNaN(powerVal) && powerVal >= 1);
+    if (outageState.isGridDown && outageState.isShed) {
+      isOn = false;
+    }
+
     const isPending = hasSwitch ? this._pendingBreakers.has(breaker.switch_entity) : false;
 
     const ratedAmps =
@@ -313,7 +407,6 @@ class PassableSpanPanelCard extends LitElement {
         currentA = (powerVal / vNum).toFixed(1);
     }
 
-    const priorityState = priorityEntity.state !== "unavailable" ? priorityEntity.state : "N/A";
     const priorityLabels = {
       never: "Stays On",
       soc_threshold: "Until Battery",
@@ -352,9 +445,18 @@ class PassableSpanPanelCard extends LitElement {
         : "col-1"
       : "col-list";
 
+    const outageBadge = outageState.isGridDown
+      ? html`
+          <div class="outage-badge ${outageState.badgeClass}" title="${outageState.badgeLabel}">
+            <ha-icon icon="${outageState.badgeIcon}"></ha-icon>
+            <span>${outageState.badgeLabel}</span>
+          </div>
+        `
+      : html``;
+
     return html`
       <div
-        class="breaker-box ${colClass} ${isPending ? "pending" : ""} ${isMenuOpen ? "active-menu" : ""}"
+        class="breaker-box ${colClass} ${isPending ? "pending" : ""} ${isMenuOpen ? "active-menu" : ""} ${outageState.isGridDown ? "off-grid-mode" : ""} ${outageState.isShed ? "is-shed" : "is-powered"}"
         style="${layoutStyle}"
         @click=${() => this._showMoreInfo(breaker.power_entity)}
       >
@@ -367,7 +469,7 @@ class PassableSpanPanelCard extends LitElement {
             }
           }}
         >
-          <div class="breaker-track ${isOn ? "on" : "off"}">
+          <div class="breaker-track ${isOn ? "on" : "off"} ${outageState.isShed ? "shed-track" : ""}">
             <div
               class="breaker-handle ${isOn ? "on" : "off"} ${isLocked ? "locked" : ""}"
               title=${isLocked ? "Circuit locked on by Span" : ""}
@@ -384,6 +486,7 @@ class PassableSpanPanelCard extends LitElement {
             >
             ${priorityEl}
           </div>
+          ${outageBadge}
           <div class="breaker-metrics">
             <div class="metric" title="Power">
               <ha-icon icon="mdi:lightning-bolt"></ha-icon>${powerStr}W
@@ -506,6 +609,26 @@ class PassableSpanPanelCard extends LitElement {
     const occupiedTabs = new Set();
     const maxTabs = 32;
 
+    const gridStatus = this._getGridStatus();
+    const batteryStatus = this._getBatterySoc();
+    const batteryThreshold = parseFloat(
+      this.config.battery_threshold !== undefined ? this.config.battery_threshold : 50
+    );
+
+    let poweredCount = 0;
+    let shedCount = 0;
+
+    allBreakers.forEach((b) => {
+      const priorityEntity = this._getEntity(b.priority_entity);
+      const prioState = priorityEntity.state !== "unavailable" ? priorityEntity.state : "N/A";
+      const outState = this._getCircuitOutageState(prioState);
+      if (outState.isShed) {
+        shedCount++;
+      } else {
+        poweredCount++;
+      }
+    });
+
     if (this._sortByPower) {
       allBreakers.sort((a, b) => {
         const powerA = parseFloat(this._getEntity(a.power_entity).state) || 0;
@@ -563,8 +686,41 @@ class PassableSpanPanelCard extends LitElement {
 
     panelElements.push(...allBreakers.map((breaker) => this._renderBreaker(breaker)));
 
+    const outageBanner = gridStatus.isDown
+      ? html`
+          <div class="outage-banner">
+            <div class="outage-banner-icon">
+              <ha-icon icon="mdi:lightning-bolt-off"></ha-icon>
+            </div>
+            <div class="outage-banner-content">
+              <div class="outage-banner-title">⚡ POWER OUTAGE - OFF-GRID BATTERY BACKUP ACTIVE</div>
+              <div class="outage-banner-sub">
+                ${batteryStatus.entityId ? `Battery Charge: ${batteryStatus.soc.toFixed(0)}%` : `Battery Backup Active`} 
+                (Cutoff Threshold: ${batteryThreshold}%) &bull; 
+                <span class="outage-count-powered">${poweredCount} Powered</span> &bull; 
+                <span class="outage-count-shed">${shedCount} Shed</span>
+              </div>
+            </div>
+          </div>
+        `
+      : html``;
+
+    const gridChip = gridStatus.isDown
+      ? html`
+          <div class="status-chip grid-down pulse-alert" title="Power Grid is OFF (Grid Status: ${gridStatus.entityId})">
+            <ha-icon icon="mdi:transmission-tower-off" style="--mdc-icon-size: 13px; margin-right: 4px;"></ha-icon>
+            GRID DOWN
+          </div>
+        `
+      : html`
+          <div class="status-chip grid-online" title="Power Grid is ON (Grid Status: ${gridStatus.entityId})">
+            <ha-icon icon="mdi:transmission-tower" style="--mdc-icon-size: 13px; margin-right: 4px;"></ha-icon>
+            GRID ONLINE
+          </div>
+        `;
+
     return html`
-      <ha-card>
+      <ha-card class="${gridStatus.isDown ? "grid-outage-active" : ""}">
         <div class="header" @click=${() => this._showMoreInfo(this.config.power_summary_entity)} style="cursor: pointer;">
           <div class="header-left">
             <h1 class="title">
@@ -577,6 +733,7 @@ class PassableSpanPanelCard extends LitElement {
             <p class="subtitle">Real-time Energy Monitoring</p>
           </div>
           <div class="header-right">
+             ${gridChip}
              <div class="status-chip active" title="Total Power">
                 ${totalW} W
              </div>
@@ -590,6 +747,8 @@ class PassableSpanPanelCard extends LitElement {
         </div>
 
         <div class="card-content">
+          ${outageBanner}
+
           <div class="list-header">
             <span class="list-title">Circuit Panel</span>
             <div
@@ -691,6 +850,116 @@ class PassableSpanPanelCard extends LitElement {
       .status-chip.warning {
         background: rgba(255, 152, 0, 0.15);
         color: var(--warning-color, #ff9800);
+      }
+      .status-chip.grid-online {
+        background: rgba(76, 175, 80, 0.15);
+        color: #4caf50;
+      }
+      .status-chip.grid-down {
+        background: rgba(244, 67, 54, 0.2);
+        color: #f44336;
+        border: 1px solid rgba(244, 67, 54, 0.4);
+      }
+      @keyframes alertPulse {
+        0% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.8; transform: scale(0.98); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+      .pulse-alert {
+        animation: alertPulse 2.5s infinite ease-in-out;
+      }
+      .outage-banner {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: linear-gradient(135deg, rgba(244, 67, 54, 0.12) 0%, rgba(255, 152, 0, 0.12) 100%);
+        border: 1px solid rgba(244, 67, 54, 0.35);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        animation: alertPulse 3s infinite ease-in-out;
+      }
+      .outage-banner-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: rgba(244, 67, 54, 0.2);
+        color: #f44336;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .outage-banner-icon ha-icon {
+        --mdc-icon-size: 20px;
+      }
+      .outage-banner-content {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .outage-banner-title {
+        font-weight: 700;
+        font-size: 0.85em;
+        color: #f44336;
+        letter-spacing: 0.03em;
+      }
+      .outage-banner-sub {
+        font-size: 0.78em;
+        color: var(--secondary-text-color);
+      }
+      .outage-count-powered {
+        color: #4caf50;
+        font-weight: 600;
+      }
+      .outage-count-shed {
+        color: #f44336;
+        font-weight: 600;
+      }
+
+      /* BREAKER OUTAGE BADGES & SHED STYLING */
+      .outage-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.7em;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 12px;
+        margin-bottom: 4px;
+        width: fit-content;
+        letter-spacing: 0.02em;
+        user-select: none;
+      }
+      .outage-badge ha-icon {
+        --mdc-icon-size: 12px;
+      }
+      .outage-badge.outage-stays-on-powered {
+        background: rgba(76, 175, 80, 0.15);
+        color: #4caf50;
+        border: 1px solid rgba(76, 175, 80, 0.3);
+      }
+      .outage-badge.outage-until-battery-powered {
+        background: rgba(255, 152, 0, 0.15);
+        color: #ff9800;
+        border: 1px solid rgba(255, 152, 0, 0.3);
+      }
+      .outage-badge.outage-until-battery-shed,
+      .outage-badge.outage-turns-off-shed,
+      .outage-badge.outage-shed {
+        background: rgba(244, 67, 54, 0.15);
+        color: #f44336;
+        border: 1px solid rgba(244, 67, 54, 0.3);
+      }
+
+      .breaker-box.off-grid-mode.is-shed {
+        opacity: 0.7;
+        background: var(--card-background-color, #1e1e1e);
+        border: 1px dashed rgba(244, 67, 54, 0.4);
+      }
+      .breaker-track.shed-track {
+        background: #2a1515 !important;
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), inset 0 0 0 1px #4a1e1e !important;
       }
 
       .card-content {
@@ -1379,6 +1648,40 @@ class PassableSpanPanelCardEditor extends LitElement {
           ["sensor"],
           "Main panel power sensor used for real-time total power, voltage, and amperage telemetry."
         )}
+
+        <details class="advanced-section" open>
+          <summary>Power Outage & Grid Settings</summary>
+          <div class="details-content">
+            ${this._renderEntityPicker(
+              "grid_status_entity",
+              "Power Grid Status Sensor (Optional)",
+              ["binary_sensor"],
+              "Binary sensor for grid status (on = Grid Active, off = Power Outage). Default: binary_sensor.power_grid_status"
+            )}
+
+            ${this._renderEntityPicker(
+              "battery_soc_entity",
+              "Battery State of Charge Entity (Optional)",
+              ["sensor"],
+              "Sensor for battery level percentage (e.g. sensor.span_panel_battery_percentage)."
+            )}
+
+            <div class="option-row">
+              <label class="label">Battery Cutoff Threshold (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                class="input-text"
+                .value=${this._config.battery_threshold !== undefined ? this._config.battery_threshold : 50}
+                .configValue=${"battery_threshold"}
+                @input=${this._valueChanged}
+                placeholder="50"
+              />
+              <span class="help-text">Battery percentage threshold below which 'Until Battery' circuits shed during a grid outage (default: 50%).</span>
+            </div>
+          </div>
+        </details>
 
         <details class="advanced-section">
           <summary>Advanced Naming Suffixes</summary>
