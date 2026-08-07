@@ -1,6 +1,6 @@
 /**
  * Passable Span Panel Card
- * Version: 1.1.0
+ * Version: 1.1.1
  * GitHub: https://github.com/GBear09/passable-span-panel-card
  * 
  * Sleek, universal Home Assistant custom dashboard card for visual breaker
@@ -8,7 +8,7 @@
  * of Span smart electrical panels.
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.1.1";
 
 const LitElement = Object.getPrototypeOf(
   customElements.get("hui-entities-card")
@@ -851,6 +851,9 @@ class PassableSpanPanelCard extends LitElement {
         box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0, 0, 0, 0.1));
         overflow: visible !important;
         color: var(--primary-text-color);
+        position: relative;
+        z-index: 1;
+        isolation: isolate;
       }
 
       /* HEADER */
@@ -1083,6 +1086,9 @@ class PassableSpanPanelCard extends LitElement {
         border-radius: 12px;
         position: relative;
         box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.1);
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
       }
       .busbar {
         position: absolute;
@@ -1123,11 +1129,17 @@ class PassableSpanPanelCard extends LitElement {
         z-index: 1;
         cursor: pointer;
         transition: transform 0.1s, box-shadow 0.1s;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        overflow: hidden;
       }
 
       /* Z-INDEX ELEVATION FOR ACTIVE POPOVER MENU */
       .breaker-box.active-menu {
         z-index: 1000 !important;
+        overflow: visible !important;
       }
       .breaker-box.active-menu .breaker-content {
         z-index: 1001 !important;
@@ -1187,8 +1199,11 @@ class PassableSpanPanelCard extends LitElement {
         flex-grow: 1;
         padding: 10px 12px;
         min-width: 0;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
         background: inherit;
-        overflow: visible;
+        overflow: hidden;
       }
       .col-1 .breaker-content { border-radius: 8px 0 0 8px; }
       .col-2 .breaker-content { border-radius: 0 8px 8px 0; }
@@ -1200,6 +1215,9 @@ class PassableSpanPanelCard extends LitElement {
         margin-bottom: 6px;
         gap: 8px;
         min-width: 0;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
         position: relative;
         overflow: visible;
       }
@@ -1209,6 +1227,8 @@ class PassableSpanPanelCard extends LitElement {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 0;
+        flex-shrink: 1;
       }
 
       /* BREAKER HANDLE & TRACK */
@@ -1219,6 +1239,7 @@ class PassableSpanPanelCard extends LitElement {
         padding: 0 16px;
         background: #1e1e1e;
         cursor: pointer;
+        flex-shrink: 0;
       }
       .breaker-switch-area.locked {
         cursor: not-allowed;
