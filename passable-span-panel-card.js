@@ -1,6 +1,6 @@
 /**
  * Passable Span Panel Card
- * Version: 1.1.1
+ * Version: 1.1.2
  * GitHub: https://github.com/GBear09/passable-span-panel-card
  * 
  * Sleek, universal Home Assistant custom dashboard card for visual breaker
@@ -8,7 +8,7 @@
  * of Span smart electrical panels.
  */
 
-const CARD_VERSION = "1.1.1";
+const CARD_VERSION = "1.1.2";
 
 const LitElement = Object.getPrototypeOf(
   customElements.get("hui-entities-card")
@@ -849,7 +849,7 @@ class PassableSpanPanelCard extends LitElement {
         border-radius: var(--ha-card-border-radius, 12px);
         background: var(--ha-card-background, #fff);
         box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0, 0, 0, 0.1));
-        overflow: visible !important;
+        overflow: hidden;
         color: var(--primary-text-color);
         position: relative;
         z-index: 1;
@@ -1879,4 +1879,5 @@ window.customCards.push({
   name: "Passable Span Panel Card",
   preview: true,
   description: "A sleek, universal visual breaker panel representation and real-time energy monitoring card for Span smart electrical panels.",
+  documentationURL: "https://github.com/GBear09/passable-span-panel-card",
 });

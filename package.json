@@ -1,6 +1,6 @@
 {
   "name": "passable-span-panel-card",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Passable Span Panel Card - A sleek, universal Home Assistant custom dashboard card for visual breaker panel monitoring and priority control of Span smart panels.",
   "main": "passable-span-panel-card.js",
   "repository": {
