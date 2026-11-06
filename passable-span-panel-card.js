@@ -8,7 +8,7 @@
  * of Span smart electrical panels.
  */
 
-const CARD_VERSION = "1.1.2";
+const CARD_VERSION = "1.1.3";
 
 const LitElement = Object.getPrototypeOf(
   customElements.get("hui-entities-card")
@@ -1863,21 +1863,29 @@ class PassableSpanPanelCardEditor extends LitElement {
   }
 }
 
-customElements.define("passable-span-panel-card", PassableSpanPanelCard);
-customElements.define("passable-span-panel-card-editor", PassableSpanPanelCardEditor);
+if (!customElements.get("passable-span-panel-card")) {
+  customElements.define("passable-span-panel-card", PassableSpanPanelCard);
+}
+if (!customElements.get("passable-span-panel-card-editor")) {
+  customElements.define("passable-span-panel-card-editor", PassableSpanPanelCardEditor);
+}
 
 if (!customElements.get("span-panel-card")) {
-  customElements.define("span-panel-card", PassableSpanPanelCard);
+  class LegacySpanPanelCard extends PassableSpanPanelCard {}
+  customElements.define("span-panel-card", LegacySpanPanelCard);
 }
 if (!customElements.get("span-panel-card-editor")) {
-  customElements.define("span-panel-card-editor", PassableSpanPanelCardEditor);
+  class LegacySpanPanelCardEditor extends PassableSpanPanelCardEditor {}
+  customElements.define("span-panel-card-editor", LegacySpanPanelCardEditor);
 }
 
 window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "passable-span-panel-card",
-  name: "Passable Span Panel Card",
-  preview: true,
-  description: "A sleek, universal visual breaker panel representation and real-time energy monitoring card for Span smart electrical panels.",
-  documentationURL: "https://github.com/GBear09/passable-span-panel-card",
-});
+if (!window.customCards.some((card) => card.type === "passable-span-panel-card")) {
+  window.customCards.push({
+    type: "passable-span-panel-card",
+    name: "Passable Span Panel Card",
+    preview: true,
+    description: "A sleek, universal visual breaker panel representation and real-time energy monitoring card for Span smart electrical panels.",
+    documentationURL: "https://github.com/GBear09/passable-span-panel-card",
+  });
+}
